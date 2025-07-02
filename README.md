@@ -154,8 +154,9 @@ GET /api/v1/employees/search?department=Engineering&position=Developer&limit=10
 ## 🧪 Testing
 
 ```bash
-# Run all tests
-pytest
+# Run test one by one to avoid rate limit
+pytest tests/test_search.py -v
+pytest tests/test_rate_limit.py -v
 ```
 
 ## 🔗 Related Links
