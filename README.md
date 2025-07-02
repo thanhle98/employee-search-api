@@ -4,10 +4,10 @@ A simple RESTful API for searching employee records built with FastAPI and nativ
 
 ## 🚀 Features
 
-- **Employee Search**: Search employees by name, department, position, location, and status
-- **Data Validation**: Input validation and error handling with Pydantic
+- **Employee Search**: Search employees and dynamic select fields by name, department, position, location, and status, with pagination to optimize performance...
 - **Interactive Documentation**: Automatic Swagger/OpenAPI documentation
-- **Native Python**: Uses only Python standard library with sqlite3 (no external database dependencies)
+- **Security**: SQL Injection Prevention and Rate Limiting
+- **Testing**: pytest
 
 ## 🛠 Tech Stack
 
@@ -23,6 +23,7 @@ A simple RESTful API for searching employee records built with FastAPI and nativ
 employee-search-api/
 ├── src/
 │   ├── api/            # API routes
+│   ├── middleware/     # Middleware: Rate Limiting 
 │   ├── models.py       # Data models
 │   ├── database.py     # Database operations (native sqlite3)
 │   └── main.py         # FastAPI application
@@ -60,7 +61,7 @@ employee-search-api/
 ## 🚦 Installation
 
 ### Prerequisites
-- Python >= 3.9
+- Python 3.9
 - Docker (optional)
 
 ### Local Development
