@@ -1,46 +1,81 @@
-from typing import Optional
+from typing import Optional, Union, Dict, Any
 from enum import Enum
+from datetime import date
+from sqlalchemy import Column, String, Index, Date
+from sqlalchemy.orm import declarative_base
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+import uuid
+
+# SQLAlchemy Base
+Base = declarative_base()
 
 class StatusEnum(str, Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     TERMINATED = "TERMINATED"
 
-class Employee:
-    def __init__(
-        self,
-        id: str,
-        first_name: str,
-        last_name: str,
-        email: Optional[str] = None,
-        phone: Optional[str] = None,
-        department: Optional[str] = None,
-        position: Optional[str] = None,
-        location: Optional[str] = None,
-        status: StatusEnum = StatusEnum.ACTIVE
-    ):
-        self.id = id
-        self.first_name = first_name
-        self.last_name = last_name
-        self.email = email
-        self.phone = phone
-        self.department = department
-        self.position = position
-        self.location = location
-        self.status = status
+# SQLAlchemy ORM Model
+class Employee(Base):
+    __tablename__ = "employees"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    first_name = Column(String, nullable=False, index=True)
+    last_name = Column(String, nullable=False, index=True)
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    department = Column(String, nullable=True, index=True)
+    position = Column(String, nullable=True, index=True)
+    location = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, index=True)
+    hire_date = Column(Date, nullable=True, index=True)  # New field for demo
+    
+    __table_args__ = (
+        Index('idx_name_full', 'first_name', 'last_name'),
+        Index('idx_dept_position', 'department', 'position'),
+        Index('idx_location_status', 'location', 'status'),
+    )
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "email": self.email,
-            "phone": self.phone,
-            "department": self.department,
-            "position": self.position,
-            "location": self.location,
-            "status": self.status.value if isinstance(self.status, StatusEnum) else self.status
-        }
+# Pydantic models for API validation and serialization
 
-    def __repr__(self):
-        return f"Employee(id='{self.id}', first_name='{self.first_name}', last_name='{self.last_name}')"
+class EmployeeSearchParams(BaseModel):
+    """Request model for employee search parameters."""
+    model_config = ConfigDict(use_enum_values=True)
+    
+    first_name: Optional[str] = Field(None, description="Filter by first name")
+    last_name: Optional[str] = Field(None, description="Filter by last name")
+    department: Optional[str] = Field(None, description="Filter by department")
+    position: Optional[str] = Field(None, description="Filter by position")
+    location: Optional[str] = Field(None, description="Filter by location")
+    status: Optional[StatusEnum] = Field(None, description="Filter by status")
+    limit: int = Field(50, ge=1, le=200, description="Number of results to return")
+    offset: int = Field(0, ge=0, description="Number of results to skip")
+    select: Optional[str] = Field(None, description="Select fields to return (comma-separated list of valid fields: id, first_name, last_name, email, phone, department, position, location, status). If not specified, all fields are returned.")
+
+class EmployeeResponse(BaseModel):
+    """Response model for employee data."""
+    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
+    
+    id: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    position: Optional[str] = None
+    location: Optional[str] = None
+    status: Optional[StatusEnum] = None
+    hire_date: Optional[date] = None
+
+    def model_dump(self, **kwargs):
+        """Override model_dump to exclude None values by default"""
+        # Set exclude_none=True by default, but allow override
+        if 'exclude_none' not in kwargs:
+            kwargs['exclude_none'] = True
+        return super().model_dump(**kwargs)
+
+class EmployeeSearchResponse(BaseModel):
+    """Response model for employee search results."""
+    employees: Union[list[EmployeeResponse], list[Dict[str, Any]]] = []
+    total: int
+    limit: int
+    offset: int

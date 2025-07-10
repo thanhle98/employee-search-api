@@ -1,230 +1,233 @@
 import os
-import sqlite3
-from typing import List, Optional, Tuple
-from src.models import Employee as EmployeeModel, StatusEnum
+from typing import List, Optional, Tuple, Dict, Any
+from contextlib import contextmanager
+from sqlalchemy import create_engine, func, or_, and_
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
+from src.models import Employee, StatusEnum, Base
 
 # Create database directory if it doesn't exist
 DB_DIR = "data"
 if not os.path.exists(DB_DIR):
     os.makedirs(DB_DIR)
 
-DATABASE_PATH = os.path.join(DB_DIR, "employees.db")
+DATABASE_URL = f"sqlite:///{os.path.join(DB_DIR, 'employees.db')}"
 
-class SQLiteDatabase:
+
+class SQLAlchemyDatabase:
     def __init__(self):
-        """Initialize database and create tables if they don't exist"""
-        self._create_tables()
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection"""
-        conn = sqlite3.connect(DATABASE_PATH)
-        conn.row_factory = sqlite3.Row  # Enable accessing columns by name
-        return conn
-    
-    def _create_tables(self):
-        """Create the employees table if it doesn't exist"""
-        conn = self._get_connection()
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS employees (
-                    id TEXT PRIMARY KEY,
-                    first_name TEXT NOT NULL,
-                    last_name TEXT NOT NULL,
-                    email TEXT,
-                    phone TEXT,
-                    department TEXT,
-                    position TEXT,
-                    location TEXT,
-                    status TEXT NOT NULL DEFAULT 'ACTIVE'
-                )
-            """)
-            
-            # Create indexes for better search performance
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_first_name ON employees(first_name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_last_name ON employees(last_name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_department ON employees(department)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_position ON employees(position)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_location ON employees(location)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON employees(status)")
-            
-            conn.commit()
-        finally:
-            conn.close()
-    
-    def _row_to_employee(self, row: sqlite3.Row) -> EmployeeModel:
-        """Convert a database row to an Employee model"""
-        return EmployeeModel(
-            id=row["id"],
-            first_name=row["first_name"],
-            last_name=row["last_name"],
-            email=row["email"] if "email" in row.keys() else None,
-            phone=row["phone"] if "phone" in row.keys() else None,
-            department=row["department"] if "department" in row.keys() else None,
-            position=row["position"] if "position" in row.keys() else None,
-            location=row["location"] if "location" in row.keys() else None,
-            status=StatusEnum(row["status"]) if "status" in row.keys() else StatusEnum.ACTIVE
+        """Initialize database"""
+        self.engine = create_engine(
+            DATABASE_URL,
+            echo=False,  # Set to True for SQL query logging
+            pool_pre_ping=True,
+            connect_args={"check_same_thread": False},  # Needed for SQLite
         )
-    
-    def _filter_employee_fields(self, employee: EmployeeModel, requested_fields: list) -> dict:
+
+        # Create sessionmaker
+        self.SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=self.engine
+        )
+
+    @contextmanager
+    def get_session(self):
+        """Get a database session with automatic cleanup"""
+        session = self.SessionLocal()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def _filter_employee_fields(
+        self, employee_dict: dict, requested_fields: list
+    ) -> dict:
         """Filter employee fields based on requested fields"""
-        employee_dict = employee.to_dict()
         if not requested_fields or "*" in requested_fields:
             return employee_dict
-        
+
         filtered_dict = {}
         for field in requested_fields:
             if field in employee_dict:
                 filtered_dict[field] = employee_dict[field]
-        return filtered_dict
-    
-    def add_employee(self, employee: EmployeeModel) -> EmployeeModel:
-        """Add an employee to the database"""
-        conn = self._get_connection()
-        try:
-            conn.execute("""
-                INSERT INTO employees (id, first_name, last_name, email, phone, department, position, location, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                employee.id,
-                employee.first_name,
-                employee.last_name,
-                employee.email,
-                employee.phone,
-                employee.department,
-                employee.position,
-                employee.location,
-                employee.status.value
-            ))
-            conn.commit()
-            return employee
-        finally:
-            conn.close()
-    
-    def search_employees(self, filters: dict, select: Optional[str] = None) -> Tuple[List[dict], int]:
-        """Search employees based on filters"""
-        conn = self._get_connection()
-        try:
-            # Build the WHERE clause and parameters
-            where_conditions = []
-            params = []
-            
-            if filters["first_name"]:
-                where_conditions.append("first_name LIKE ?")
-                params.append(f"%{filters['first_name']}%")
-            
-            if filters["last_name"]:
-                where_conditions.append("last_name LIKE ?")
-                params.append(f"%{filters['last_name']}%")
-            
-            if filters["department"]:
-                where_conditions.append("department LIKE ?")
-                params.append(f"%{filters['department']}%")
-            
-            if filters["position"]:
-                where_conditions.append("position LIKE ?")
-                params.append(f"%{filters['position']}%")
-            
-            if filters["location"]:
-                where_conditions.append("location LIKE ?")
-                params.append(f"%{filters['location']}%")
-            
-            if filters["status"]:
-                where_conditions.append("status = ?")
-                params.append(filters["status"].value)
-            
-            # Build the query
-            base_query = "FROM employees"
-            if where_conditions:
-                base_query += " WHERE " + " AND ".join(where_conditions)
-            
-            # Get total count
-            count_query = f"SELECT COUNT(*) {base_query}"
-            cursor = conn.execute(count_query, params)
-            total = cursor.fetchone()[0]
-            
-            # Get paginated results
-            offset = filters["offset"] or 0
-            limit = filters["limit"] or 50
 
-            # SECURITY: Validate select fields against whitelist to prevent SQL injection
-            allowed_fields = {
-                "id", "first_name", "last_name", "email", "phone", 
-                "department", "position", "location", "status"
-            }
-            
-            requested_fields = []
-            if select:
-                # Parse and validate each field
-                requested_fields = [field.strip() for field in select.split(",")]
-                
-                for field in requested_fields:
-                    if field not in allowed_fields:
-                        # Log the invalid field attempt or raise an error
-                        raise ValueError(f"Invalid field '{field}' in select parameter")
-            
-            # Always include required fields in the query, then filter response
-            required_fields = {"id", "first_name", "last_name"}
-            fields_to_query = required_fields.copy()
-            
-            if requested_fields:
-                # Add requested fields to query (they're already validated)
-                fields_to_query.update(requested_fields)
-            else:
-                # If no specific fields requested, get all fields
-                fields_to_query = allowed_fields
-            
-            fields_str = ", ".join(sorted(fields_to_query))
-            
-            select_query = f"SELECT {fields_str} {base_query} LIMIT ? OFFSET ?"
-            cursor = conn.execute(select_query, params + [limit, offset])
-            rows = cursor.fetchall()
-            
-            employees = [self._row_to_employee(row) for row in rows]
-            
-            # Filter results to only include requested fields
-            if requested_fields:
-                filtered_employees = [
-                    self._filter_employee_fields(emp, requested_fields) 
+        return filtered_dict
+
+    def _build_search_query(self, session: Session, filters: dict):
+        """Build SQLAlchemy query based on filters"""
+        query = session.query(Employee)
+
+        conditions = []
+
+        if filters.get("first_name"):
+            conditions.append(Employee.first_name.ilike(f"%{filters['first_name']}%"))
+
+        if filters.get("last_name"):
+            conditions.append(Employee.last_name.ilike(f"%{filters['last_name']}%"))
+
+        if filters.get("department"):
+            conditions.append(Employee.department.ilike(f"%{filters['department']}%"))
+
+        if filters.get("position"):
+            conditions.append(Employee.position.ilike(f"%{filters['position']}%"))
+
+        if filters.get("location"):
+            conditions.append(Employee.location.ilike(f"%{filters['location']}%"))
+
+        if filters.get("status"):
+            conditions.append(Employee.status == filters["status"])
+
+        if conditions:
+            query = query.filter(and_(*conditions))
+
+        return query
+
+    def add_employee(self, employee_data: dict) -> Employee:
+        """Add an employee to the database"""
+        with self.get_session() as session:
+            # Create employee with SQLAlchemy model
+            employee = Employee(
+                id=employee_data.get("id"),
+                first_name=employee_data["first_name"],
+                last_name=employee_data["last_name"],
+                email=employee_data.get("email"),
+                phone=employee_data.get("phone"),
+                department=employee_data.get("department"),
+                position=employee_data.get("position"),
+                location=employee_data.get("location"),
+                status=employee_data.get("status", StatusEnum.ACTIVE.value),
+            )
+
+            session.add(employee)
+            session.flush()  # Flush to get the ID
+            return employee
+
+    def search_employees(
+        self, filters: dict, select: Optional[str] = None
+    ) -> Tuple[List[dict], int]:
+        """Search employees based on filters"""
+        try:
+            with self.get_session() as session:
+                # Build the base query
+                query = self._build_search_query(session, filters)
+
+                # Get total count before pagination
+                total = query.count()
+
+                # Apply pagination
+                offset = filters.get("offset", 0)
+                limit = filters.get("limit", 50)
+
+                # Execute query with pagination
+                employees = query.offset(offset).limit(limit).all()
+
+                # Convert to dictionaries
+                employee_dicts = []
+                for emp in employees:
+                    emp_dict = {
+                        "id": emp.id,
+                        "first_name": emp.first_name,
+                        "last_name": emp.last_name,
+                        "email": emp.email,
+                        "phone": emp.phone,
+                        "department": emp.department,
+                        "position": emp.position,
+                        "location": emp.location,
+                        "status": emp.status,
+                    }
+                    employee_dicts.append(emp_dict)
+
+                # Handle field selection
+                if select:
+                    # Validate and parse select fields
+                    allowed_fields = {
+                        "id",
+                        "first_name",
+                        "last_name",
+                        "email",
+                        "phone",
+                        "department",
+                        "position",
+                        "location",
+                        "status",
+                    }
+
+                    requested_fields = [field.strip() for field in select.split(",")]
+
+                    for field in requested_fields:
+                        if field not in allowed_fields:
+                            raise ValueError(
+                                f"Invalid field '{field}' in select parameter"
+                            )
+
+                    # Filter fields for each employee
+                    filtered_employees = [
+                        self._filter_employee_fields(emp_dict, requested_fields)
+                        for emp_dict in employee_dicts
+                    ]
+                    return filtered_employees, total
+
+                return employee_dicts, total
+
+        except SQLAlchemyError as e:
+            raise Exception(f"Database error: {str(e)}")
+
+    def get_all_employees(self) -> List[dict]:
+        """Get all employees"""
+        try:
+            with self.get_session() as session:
+                employees = session.query(Employee).all()
+                return [
+                    {
+                        "id": emp.id,
+                        "first_name": emp.first_name,
+                        "last_name": emp.last_name,
+                        "email": emp.email,
+                        "phone": emp.phone,
+                        "department": emp.department,
+                        "position": emp.position,
+                        "location": emp.location,
+                        "status": emp.status,
+                    }
                     for emp in employees
                 ]
-                return filtered_employees, total
-            else:
-                # Return full employee objects as dictionaries
-                return [emp.to_dict() for emp in employees], total
-            
-        finally:
-            conn.close()
-    
-    def get_all_employees(self) -> List[EmployeeModel]:
-        """Get all employees"""
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute("SELECT * FROM employees")
-            rows = cursor.fetchall()
-            return [self._row_to_employee(row) for row in rows]
-        finally:
-            conn.close()
-    
-    def get_employee_by_id(self, employee_id: str) -> Optional[EmployeeModel]:
+        except SQLAlchemyError as e:
+            raise Exception(f"Database error: {str(e)}")
+
+    def get_employee_by_id(self, employee_id: str) -> Optional[dict]:
         """Get a specific employee by ID"""
-        conn = self._get_connection()
         try:
-            cursor = conn.execute("SELECT * FROM employees WHERE id = ?", (employee_id,))
-            row = cursor.fetchone()
-            if row:
-                return self._row_to_employee(row)
-            return None
-        finally:
-            conn.close()
-    
+            with self.get_session() as session:
+                employee = (
+                    session.query(Employee).filter(Employee.id == employee_id).first()
+                )
+                if employee:
+                    return {
+                        "id": employee.id,
+                        "first_name": employee.first_name,
+                        "last_name": employee.last_name,
+                        "email": employee.email,
+                        "phone": employee.phone,
+                        "department": employee.department,
+                        "position": employee.position,
+                        "location": employee.location,
+                        "status": employee.status,
+                    }
+                return None
+        except SQLAlchemyError as e:
+            raise Exception(f"Database error: {str(e)}")
+
     def clear_all(self):
         """Clear all employees (useful for testing)"""
-        conn = self._get_connection()
         try:
-            conn.execute("DELETE FROM employees")
-            conn.commit()
-        finally:
-            conn.close()
+            with self.get_session() as session:
+                session.query(Employee).delete()
+        except SQLAlchemyError as e:
+            raise Exception(f"Database error: {str(e)}")
+
 
 # Global database instance
-db = SQLiteDatabase() 
+db = SQLAlchemyDatabase()

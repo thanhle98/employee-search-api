@@ -7,7 +7,7 @@ This script populates the mock database with realistic employee data.
 import random
 import time
 
-from src.models import Employee, StatusEnum
+from src.models import StatusEnum
 from src.database import db
 
 # Sample data lists based on the screenshot and common HR data
@@ -80,8 +80,8 @@ def generate_phone() -> str:
     number = f"{random.randint(100, 999)}-{random.randint(1000, 9999)}"
     return f"+1-{area_code}-{number}"
 
-def generate_sample_employees(count: int = 50) -> list[Employee]:
-    """Generate a list of sample employees"""
+def generate_sample_employees(count: int = 50) -> list[dict]:
+    """Generate a list of sample employee data as dictionaries"""
     employees = []
     
     for i in range(count):
@@ -94,35 +94,35 @@ def generate_sample_employees(count: int = 50) -> list[Employee]:
         location = random.choice(LOCATIONS) if random.random() > 0.05 else None
         
         # Most employees are active
-        status = StatusEnum.ACTIVE if random.random() > 0.05 else random.choice([StatusEnum.INACTIVE, StatusEnum.TERMINATED])
+        status = StatusEnum.ACTIVE.value if random.random() > 0.05 else random.choice([StatusEnum.INACTIVE.value, StatusEnum.TERMINATED.value])
         
-        employee = Employee(
-            id=generate_employee_id(i + 1),
-            first_name=first_name,
-            last_name=last_name,
-            email=generate_email(first_name, last_name),
-            phone=generate_phone() if random.random() > 0.2 else None,
-            department=department,
-            position=position,
-            location=location,
-            status=status
-        )
+        employee_data = {
+            "id": generate_employee_id(i + 1),
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": generate_email(first_name, last_name),
+            "phone": generate_phone() if random.random() > 0.2 else None,
+            "department": department,
+            "position": position,
+            "location": location,
+            "status": status
+        }
         
-        employees.append(employee)
+        employees.append(employee_data)
     
     return employees
 
 def main():
     """Main function to populate the database"""
-    print("🚀 Generating sample HR database with 1M employees...")
+    print("🚀 Generating sample HR database with 5k employees...")
     start_time = time.time()
     
-    # Clear existing data
+    print("🧹 Clearing existing data...")
     db.clear_all()
     
     # Generate sample employees in batches for better memory management
-    batch_size = 10000
-    total_employees = 30000
+    batch_size = 1000
+    total_employees = 5000
     
     print(f"📊 Generating {total_employees:,} employees in batches of {batch_size:,}...")
     
@@ -137,14 +137,16 @@ def main():
         sample_employees = generate_sample_employees(batch_count)
         
         # Update employee IDs to be sequential
-        for i, employee in enumerate(sample_employees):
-            employee.id = generate_employee_id(batch_start + i + 1)
+        for i, employee_data in enumerate(sample_employees):
+            employee_data["id"] = generate_employee_id(batch_start + i + 1)
         
         # Add employees to database
-        for employee in sample_employees:
-            db.add_employee(employee)
-        
-        total_added += len(sample_employees)
+        for employee_data in sample_employees:
+            try:
+                db.add_employee(employee_data)
+                total_added += 1
+            except Exception as e:
+                print(f"   ⚠️  Error adding employee {employee_data['id']}: {e}")
         
         # Progress update
         progress = (total_added / total_employees) * 100
@@ -155,37 +157,6 @@ def main():
     
     print(f"✅ Successfully generated {total_added:,} sample employees!")
     print(f"⏱️  Generation completed in {duration:.2f} seconds ({total_added/duration:.0f} employees/sec)")
-    
-    # Display some statistics
-    all_employees = db.get_all_employees()
-    active_count = len([emp for emp in all_employees if emp.status == StatusEnum.ACTIVE])
-    departments = set(emp.department for emp in all_employees if emp.department)
-    locations = set(emp.location for emp in all_employees if emp.location)
-    
-    print(f"\n📊 Database Statistics:")
-    print(f"   - Total employees: {len(all_employees):,}")
-    print(f"   - Active employees: {active_count:,}")
-    print(f"   - Departments: {len(departments)}")
-    print(f"   - Locations: {len(locations)}")
-    
-    print(f"\n🔍 Sample employees:")
-    for i, emp in enumerate(all_employees[:5]):
-        print(f"   {i+1}. {emp.first_name} {emp.last_name} - {emp.department or 'No dept'} - {emp.location or 'No location'}")
-    
-    print(f"\n💾 Database Information:")
-    print(f"   - Type: SQLite")
-    print(f"   - Location: data/employees.db")
-    print(f"   - File size: ~{(total_added * 0.5):.0f} MB (estimated)")
-    print(f"   - Persistent: ✅ Data will persist between restarts")
-    
-    print(f"\n🌐 API is ready! Start the server with:")
-    print(f"   uvicorn src.main:app --reload")
-    print(f"   Then visit: http://localhost:8000/docs")
-    
-    print(f"\n💡 Performance Tips:")
-    print(f"   - 1M records generated in batches for memory efficiency")
-    print(f"   - Use API pagination (limit/offset) for large result sets")
-    print(f"   - Consider indexing on frequently searched fields")
 
 if __name__ == "__main__":
     main() 

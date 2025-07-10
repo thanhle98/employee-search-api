@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from src.main import app
-from src.models import Employee, StatusEnum
+from src.models import StatusEnum
 from src.database import db
 
 client = TestClient(app)
@@ -13,42 +13,43 @@ def setup_test_data():
     
     # Add some test employees
     test_employees = [
-        Employee(
-            id="TEST001",
-            first_name="John",
-            last_name="Doe",
-            email="john.doe@test.com",
-            phone="+1-555-0001",
-            department="Engineering",
-            position="Software Developer",
-            location="New York",
-            status=StatusEnum.ACTIVE
-        ),
-        Employee(
-            id="TEST002",
-            first_name="Jane",
-            last_name="Smith",
-            email="jane.smith@test.com",
-            phone="+1-555-0002",
-            department="Marketing",
-            position="Marketing Manager",
-            location="London",
-            status=StatusEnum.ACTIVE
-        ),
-        Employee(
-            id="TEST003",
-            first_name="Bob",
-            last_name="Johnson",
-            email="bob.johnson@test.com",
-            department="Engineering",
-            position="Senior Engineer",
-            location="Singapore",
-            status=StatusEnum.INACTIVE
-        )
+        {
+            "id": "TEST001",
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": "john.doe@test.com",
+            "phone": "+1-555-0001",
+            "department": "Engineering",
+            "position": "Software Developer",
+            "location": "New York",
+            "status": StatusEnum.ACTIVE.value
+        },
+        {
+            "id": "TEST002",
+            "first_name": "Jane",
+            "last_name": "Smith",
+            "email": "jane.smith@test.com",
+            "phone": "+1-555-0002",
+            "department": "Marketing",
+            "position": "Marketing Manager",
+            "location": "London",
+            "status": StatusEnum.ACTIVE.value
+        },
+        {
+            "id": "TEST003",
+            "first_name": "Bob",
+            "last_name": "Johnson",
+            "email": "bob.johnson@test.com",
+            "phone": None,
+            "department": "Engineering",
+            "position": "Senior Engineer",
+            "location": "Singapore",
+            "status": StatusEnum.INACTIVE.value
+        }
     ]
     
-    for emp in test_employees:
-        db.add_employee(emp)
+    for emp_data in test_employees:
+        db.add_employee(emp_data)
 
 def test_root_endpoint():
     """Test the root endpoint"""
@@ -138,8 +139,8 @@ def test_select_valid_fields():
         assert "last_name" in emp  
         assert "email" in emp
         # These fields should not be present since they weren't selected
-        assert "phone" not in emp or emp["phone"] is None
-        assert "department" not in emp or emp["department"] is None
+        assert "phone" not in emp
+        assert "department" not in emp
 
 def test_sql_injection_prevention_invalid_field():
     """Test that invalid field names are rejected to prevent SQL injection"""
@@ -198,8 +199,40 @@ def test_field_validation_case_sensitive():
 
 def test_field_validation_with_spaces():
     """Test that fields with extra spaces are handled correctly"""
-    response = client.get("/api/v1/employees/search?select= first_name , last_name , email ")
+    response = client.get("/api/v1/employees/search?select= first_name , last_name ")
     assert response.status_code == 200
     
     data = response.json()
-    assert data["total"] == 3 
+    assert data["total"] == 3
+    for emp in data["employees"]:
+        assert "first_name" in emp
+        assert "last_name" in emp
+
+def test_pydantic_validation_invalid_limit():
+    """Test that Pydantic validates limit parameter"""
+    response = client.get("/api/v1/employees/search?limit=0")
+    assert response.status_code == 422  # Pydantic validation error
+    
+    response = client.get("/api/v1/employees/search?limit=201")
+    assert response.status_code == 422  # Pydantic validation error
+
+def test_pydantic_validation_invalid_offset():
+    """Test that Pydantic validates offset parameter"""
+    response = client.get("/api/v1/employees/search?offset=-1")
+    assert response.status_code == 422  # Pydantic validation error
+
+def test_response_model_validation():
+    """Test that the response follows the Pydantic response model"""
+    response = client.get("/api/v1/employees/search")
+    assert response.status_code == 200
+    
+    data = response.json()
+    # Verify response structure matches EmployeeSearchResponse model
+    assert "employees" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["employees"], list)
+    assert isinstance(data["total"], int)
+    assert isinstance(data["limit"], int)
+    assert isinstance(data["offset"], int) 
