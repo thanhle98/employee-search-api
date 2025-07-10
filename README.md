@@ -46,17 +46,22 @@ employee-search-api/
    pip install -r requirements.txt
    ```
 
-2. **Generate sample data**
+2. **Run database migrations**
+   ```bash
+   alembic upgrade head
+   ```
+
+3. **Generate sample data**
    ```bash
    python generate_sample_data.py
    ```
 
-3. **Run the application**
+4. **Run the application**
    ```bash
    uvicorn src.main:app --reload
    ```
 
-4. **Access the API**
+5. **Access the API**
    - API Documentation: http://localhost:8000/docs
    - Health Check: http://localhost:8000/health
 
@@ -85,12 +90,17 @@ employee-search-api/
    pip install -r requirements.txt
    ```
 
-4. **Generate sample data**
+4. **Run database migrations**
+   ```bash
+   alembic upgrade head
+   ```
+
+5. **Generate sample data**
    ```bash
    python generate_sample_data.py
    ```
 
-5. **Run the application**
+6. **Run the application**
    ```bash
    uvicorn src.main:app --reload
    ```
