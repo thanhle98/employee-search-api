@@ -31,7 +31,6 @@ def upgrade() -> None:
     sa.Column('position', sa.String(), nullable=True),
     sa.Column('location', sa.String(), nullable=True),
     sa.Column('status', sa.String(), nullable=False),
-    sa.Column('hire_date', sa.Date(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_dept_position', 'employees', ['department', 'position'], unique=False)
@@ -39,7 +38,6 @@ def upgrade() -> None:
     op.create_index('idx_name_full', 'employees', ['first_name', 'last_name'], unique=False)
     op.create_index(op.f('ix_employees_department'), 'employees', ['department'], unique=False)
     op.create_index(op.f('ix_employees_first_name'), 'employees', ['first_name'], unique=False)
-    op.create_index(op.f('ix_employees_hire_date'), 'employees', ['hire_date'], unique=False)
     op.create_index(op.f('ix_employees_last_name'), 'employees', ['last_name'], unique=False)
     op.create_index(op.f('ix_employees_location'), 'employees', ['location'], unique=False)
     op.create_index(op.f('ix_employees_position'), 'employees', ['position'], unique=False)
@@ -54,7 +52,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_employees_position'), table_name='employees')
     op.drop_index(op.f('ix_employees_location'), table_name='employees')
     op.drop_index(op.f('ix_employees_last_name'), table_name='employees')
-    op.drop_index(op.f('ix_employees_hire_date'), table_name='employees')
     op.drop_index(op.f('ix_employees_first_name'), table_name='employees')
     op.drop_index(op.f('ix_employees_department'), table_name='employees')
     op.drop_index('idx_name_full', table_name='employees')

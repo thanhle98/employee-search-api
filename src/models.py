@@ -6,7 +6,6 @@ from sqlalchemy.orm import declarative_base
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 import uuid
 
-# SQLAlchemy Base
 Base = declarative_base()
 
 class StatusEnum(str, Enum):
@@ -14,7 +13,6 @@ class StatusEnum(str, Enum):
     INACTIVE = "INACTIVE"
     TERMINATED = "TERMINATED"
 
-# SQLAlchemy ORM Model
 class Employee(Base):
     __tablename__ = "employees"
     
@@ -27,7 +25,6 @@ class Employee(Base):
     position = Column(String, nullable=True, index=True)
     location = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
-    hire_date = Column(Date, nullable=True, index=True)  # New field for demo
     
     __table_args__ = (
         Index('idx_name_full', 'first_name', 'last_name'),
@@ -35,7 +32,6 @@ class Employee(Base):
         Index('idx_location_status', 'location', 'status'),
     )
 
-# Pydantic models for API validation and serialization
 
 class EmployeeSearchParams(BaseModel):
     """Request model for employee search parameters."""
@@ -64,14 +60,6 @@ class EmployeeResponse(BaseModel):
     position: Optional[str] = None
     location: Optional[str] = None
     status: Optional[StatusEnum] = None
-    hire_date: Optional[date] = None
-
-    def model_dump(self, **kwargs):
-        """Override model_dump to exclude None values by default"""
-        # Set exclude_none=True by default, but allow override
-        if 'exclude_none' not in kwargs:
-            kwargs['exclude_none'] = True
-        return super().model_dump(**kwargs)
 
 class EmployeeSearchResponse(BaseModel):
     """Response model for employee search results."""

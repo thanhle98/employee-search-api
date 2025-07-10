@@ -86,10 +86,8 @@ async def search_employees(
         else:
             employees = [EmployeeResponse(**emp_data) for emp_data in employees_data]
             
-            serialized_employees = [emp.model_dump(exclude_none=True) for emp in employees]
-            
             response_data = {
-                "employees": serialized_employees,
+                "employees": employees,
                 "total": total,
                 "limit": params.limit,
                 "offset": params.offset
